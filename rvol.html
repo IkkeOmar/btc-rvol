@@ -27,12 +27,11 @@
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
   }
-  body { padding: 0 0 24px 0; max-width: 100%; }
+  body { padding: 0 0 80px 0; max-width: 100%; }
   .topbar {
-    position: sticky; top: 0; z-index: 100;
+    position: relative;
     background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    padding: 10px 12px 8px 12px;
+    padding: 8px 12px 6px 12px;
     display: flex; align-items: center; gap: 10px;
   }
   .topbar h1 { font-size: 15px; font-weight: 700; flex: 1; }
@@ -43,34 +42,45 @@
   }
   .ticker-btn:active { background: var(--panel-2); }
   .chip-row {
-    display: flex; gap: 6px; overflow-x: auto;
+    display: flex; gap: 5px; overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 6px 12px 8px 12px;
+    padding: 4px 12px 5px 12px;
     background: var(--bg);
-    border-bottom: 1px solid var(--border);
     scrollbar-width: none;
   }
   .chip-row::-webkit-scrollbar { display: none; }
   .chip {
     flex: 0 0 auto;
-    padding: 8px 14px;
+    padding: 5px 11px;
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 18px;
+    border-radius: 14px;
     color: var(--dim);
-    font-size: 13px; font-weight: 600;
+    font-size: 12px; font-weight: 600;
     cursor: pointer; user-select: none;
   }
   .chip.active { background: var(--purple); color: white; border-color: var(--purple); }
   .chip:active { transform: scale(0.96); }
-  .section { padding: 12px; }
-  .section-title {
-    font-size: 11px; color: var(--dim);
-    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+
+  /* Sticky bottom toolbar — mirrors top controls for thumb reach */
+  .bottombar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(11, 13, 23, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) 8px;
+    display: flex; flex-direction: column; gap: 4px;
   }
+  .bottombar .row { display: flex; align-items: center; gap: 4px; min-height: 0; }
+  .bottombar .lbl { color: var(--dim); font-size: 10px; padding: 0 4px; letter-spacing: 0.5px; text-transform: uppercase; flex: 0 0 30px; }
+  .bottombar .chip { padding: 6px 10px; font-size: 12px; }
+  .bottombar .ticker-btn { font-size: 12px; padding: 4px 8px; }
+
+  .section { padding: 10px 12px; }
   .big-stat {
     display: flex; align-items: baseline; gap: 12px;
-    padding: 8px 12px 4px 12px;
+    padding: 8px 12px 2px 12px;
   }
   .big-num {
     font-size: 56px; font-weight: 800;
@@ -130,25 +140,8 @@
 
 <div class="topbar">
   <h1>Cumulative RVOL</h1>
+  <div class="status" id="status" style="font-size:11px; color:var(--dim);">Loading…</div>
   <button class="ticker-btn" id="btn-ticker">BTC-USD ▾</button>
-</div>
-
-<div class="chip-row" id="lookback-row">
-  <div class="chip" data-lb="3">3d</div>
-  <div class="chip" data-lb="5">5d</div>
-  <div class="chip" data-lb="10">10d</div>
-  <div class="chip active" data-lb="20">20d</div>
-  <div class="chip" data-lb="50">50d</div>
-  <div class="chip" data-lb="100">100d</div>
-</div>
-
-<div class="chip-row" id="interval-row">
-  <div class="chip" data-iv="1m">1m</div>
-  <div class="chip" data-iv="5m">5m</div>
-  <div class="chip active" data-iv="15m">15m</div>
-  <div class="chip" data-iv="1h">1h</div>
-  <div class="chip" data-iv="4h">4h</div>
-  <div class="chip" data-iv="1d">1d</div>
 </div>
 
 <div class="big-stat">
@@ -160,20 +153,12 @@
   </div>
 </div>
 
-<div class="status" id="status">Loading…</div>
-
 <div class="section">
-  <div class="section-title" id="today-title">Today · cumulative RVOL</div>
   <div class="chart" id="today-chart"></div>
-</div>
-
-<div class="section">
-  <div class="section-title">Price · last 7 days</div>
   <div class="chart short" id="price-chart"></div>
 </div>
 
 <div class="section">
-  <div class="section-title">Pick a day</div>
   <div class="date-strip" id="date-strip"></div>
 </div>
 
@@ -190,19 +175,38 @@
     <div class="mini-stat"><div class="lbl">Volume</div><div class="val" id="d-vol">—</div></div>
     <div class="mini-stat"><div class="lbl">Final RVOL</div><div class="val" id="d-rvol">—</div></div>
   </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Selected day · candles + volume</div>
   <div class="chart" id="day-chart"></div>
-</div>
-<div class="section">
-  <div class="section-title">Selected day · cumulative RVOL</div>
-  <div class="chart" id="day-rvol-chart"></div>
+  <div class="chart short" id="day-rvol-chart"></div>
+  <div class="help">Tap a day above. rvol &gt; 1 = running hotter than the prior N days at the same time-of-day.</div>
 </div>
 
-<div class="help">
-  Tap a day above. rvol &gt; 1 = running hotter than the prior N days at the same time-of-day.
+<div class="bottombar">
+  <div class="row">
+    <span class="lbl">Coin</span>
+    <button class="ticker-btn" id="btn-ticker-bottom">BTC-USD ▾</button>
+  </div>
+  <div class="row">
+    <span class="lbl">Window</span>
+    <div class="chip-row" id="lookback-row-bottom" style="border:0; padding:0; background:transparent; flex:1;">
+      <div class="chip" data-lb="3">3d</div>
+      <div class="chip" data-lb="5">5d</div>
+      <div class="chip" data-lb="10">10d</div>
+      <div class="chip active" data-lb="20">20d</div>
+      <div class="chip" data-lb="50">50d</div>
+      <div class="chip" data-lb="100">100d</div>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lbl">TF</span>
+    <div class="chip-row" id="interval-row-bottom" style="border:0; padding:0; background:transparent; flex:1;">
+      <div class="chip" data-iv="1m">1m</div>
+      <div class="chip" data-iv="5m">5m</div>
+      <div class="chip active" data-iv="15m">15m</div>
+      <div class="chip" data-iv="1h">1h</div>
+      <div class="chip" data-iv="4h">4h</div>
+      <div class="chip" data-iv="1d">1d</div>
+    </div>
+  </div>
 </div>
 
 <script src="lightweight-charts.min.js"></script>
@@ -310,6 +314,10 @@ function setStatus(msg, kind) {
   const el = $("status");
   el.textContent = msg;
   el.className = "status" + (kind ? " " + kind : "");
+  if (kind === "err" || kind === "live") {
+    // Fade after 3s
+    setTimeout(() => { if (el.textContent === msg) el.style.opacity = 0.6; }, 3000);
+  }
 }
 
 function makeChart(containerId, opts) {
@@ -406,7 +414,6 @@ function render() {
     });
   }
   state.todaySeries.setData(todayData);
-  $("today-title").textContent = "Today (UTC) · cumulative RVOL · lookback " + state.lookback + "d";
 
   const sevenDaysAgo = lastBarLast[0] - 7 * 86400 * 1000;
   const priceData = bars.filter(b => b[0] >= sevenDaysAgo).map(b => ({
@@ -537,7 +544,7 @@ function wireChips(rowId, key, handler) {
   });
 }
 
-wireChips("lookback-row", "lb", v => {
+wireChips("lookback-row-bottom", "lb", v => {
   state.lookback = parseInt(v, 10);
   if (state.bars.length > 0) {
     setStatus("Recomputing lookback=" + state.lookback + "…");
@@ -549,7 +556,7 @@ wireChips("lookback-row", "lb", v => {
   }
 });
 
-wireChips("interval-row", "iv", v => {
+wireChips("interval-row-bottom", "iv", v => {
   state.interval = v;
   if (state.todayChart) { state.todayChart.remove(); state.todayChart = null; }
   if (state.priceChart) { state.priceChart.remove(); state.priceChart = null; }
@@ -560,12 +567,15 @@ wireChips("interval-row", "iv", v => {
 
 const TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD"];
 let tickerIdx = 0;
-$("btn-ticker").addEventListener("click", () => {
+function cycleTicker() {
   tickerIdx = (tickerIdx + 1) % TICKERS.length;
   state.ticker = TICKERS[tickerIdx];
   $("btn-ticker").textContent = state.ticker + " ▾";
+  $("btn-ticker-bottom").textContent = state.ticker + " ▾";
   loadData();
-});
+}
+$("btn-ticker").addEventListener("click", cycleTicker);
+$("btn-ticker-bottom").addEventListener("click", cycleTicker);
 
 loadData();
 </script>
