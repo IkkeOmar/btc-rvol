@@ -78,6 +78,17 @@
   .bottombar .ticker-btn { font-size: 12px; padding: 4px 8px; }
 
   .section { padding: 10px 12px; }
+  .top-rvol-header {
+    display: flex; align-items: baseline; gap: 8px;
+    margin-bottom: 6px;
+  }
+  .top-rvol-header .lbl {
+    font-size: 11px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .top-rvol-header .date {
+    font-size: 12px; color: var(--text); font-weight: 600;
+  }
   .big-stat {
     display: flex; align-items: baseline; gap: 12px;
     padding: 8px 12px 2px 12px;
@@ -154,6 +165,10 @@
 </div>
 
 <div class="section">
+  <div class="top-rvol-header" id="top-rvol-header">
+    <span class="lbl">Cumulative RVOL</span>
+    <span class="date" id="top-rvol-date">—</span>
+  </div>
   <div class="chart" id="today-chart"></div>
   <div class="chart short" id="price-chart"></div>
 </div>
@@ -320,6 +335,31 @@ function setStatus(msg, kind) {
   }
 }
 
+function setTopRvolLabel(dayMs) {
+  const d = new Date(dayMs);
+  const opts = { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" };
+  $("top-rvol-date").textContent = d.toLocaleDateString("en-US", opts) + " UTC";
+}
+
+function renderTopRvolChartForDay(dayMs) {
+  // The top chart is the SAME chart as `todayChart`; we just feed it
+  // the selected day's bars instead of today's. Series object is reused.
+  if (!state.todaySeries) return;
+  const dayBars = state.bars.filter(b => dayKey(b[0]) === dayKey(dayMs));
+  const data = [];
+  for (const b of dayBars) {
+    const v = state.rvol.get(b[0]);
+    if (v != null) {
+      data.push({
+        time: b[0] / 1000, value: v,
+        color: v >= 1.0 ? "#26a69a" : "#ef5350",
+      });
+    }
+  }
+  state.todaySeries.setData(data);
+  setTopRvolLabel(dayMs);
+}
+
 function makeChart(containerId, opts) {
   return LightweightCharts.createChart($(containerId), Object.assign({
     layout: { background: { color: "transparent" }, textColor: "#8b91a8", fontSize: 11 },
@@ -414,6 +454,8 @@ function render() {
     });
   }
   state.todaySeries.setData(todayData);
+  // Initial top-chart day = today (UTC)
+  setTopRvolLabel(dayKeyMs(lastBarLast[0]));
 
   const sevenDaysAgo = lastBarLast[0] - 7 * 86400 * 1000;
   const priceData = bars.filter(b => b[0] >= sevenDaysAgo).map(b => ({
@@ -450,6 +492,7 @@ function render() {
                    + '<div class="rv ' + cls + '">' + rvTxt + '</div>';
     card.addEventListener("click", () => {
       state.selectedDay = dayMs;
+      renderTopRvolChartForDay(dayMs);
       renderDay();
       document.querySelectorAll(".date-card").forEach(c => c.classList.remove("active"));
       card.classList.add("active");
