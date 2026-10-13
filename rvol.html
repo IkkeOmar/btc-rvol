@@ -217,7 +217,6 @@
     <div class="subtitle" id="hdr-sub">5m bars · 3 months · N-day rolling baseline</div>
   </div>
   <div>
-    <span class="pill" id="hdr-mode">linear dist</span>
     <span class="pill" id="hdr-lookback">lookback: 20</span>
   </div>
 </header>
@@ -228,7 +227,7 @@
   <br>
   <b>Controls</b>:
   <kbd>Lookback</kbd> = N-day rolling average daily volume baseline.
-  <kbd>Distribution</kbd> = U-curve (US equities, 5% in first 5 min) or Linear (24/7 crypto).
+  <kbd>Distribution</kbd> = empirical: each bar's baseline is the average cumulative volume of the prior N sessions at the same elapsed time. No model assumption.
   <kbd>Date range</kbd> = zoom on the price chart by dragging.
   Tap a day in the price chart to see bar-by-bar breakdown below.
 </div>
@@ -240,12 +239,6 @@
       <option value="10">10 days</option>
       <option value="20" selected>20 days</option>
       <option value="50">50 days</option>
-    </select>
-  </label>
-  <label>Distribution:
-    <select id="ctrl-dist">
-      <option value="linear" selected>linear (24/7 crypto)</option>
-      <option value="u_curve">U-curve (US equities)</option>
     </select>
   </label>
   <button class="btn" id="btn-recompute">Recompute</button>
@@ -323,7 +316,6 @@ const state = {
   overviewBars: [],      // 15-min bars: [t, o, h, l, c, v, r20, r5]
   detailBars: [],        // 5-min bars last 7 days: same shape
   lookback: 20,
-  dist: "linear",
   selectedDay: null,     // ms timestamp of the day being shown
   priceChart: null,
   dayChart: null,
@@ -482,89 +474,93 @@ function initCharts() {
 }
 
 /* -----------------------------------------------------------------------
- * Compute RVOL in JS (same algorithm as the Python script)
+ * Compute RVOL in JS — empirical time-of-day baseline
  *
- * If `fullBars` is provided (a larger dataset used to compute the rolling
- * average), use its daily volumes for the rolling mean. This is needed
- * when computing rvol for a single day selected from the price chart
- * — otherwise the rolling window sees only 1 day and is NaN.
+ * Algorithm (matches the Python `cumulative_rvol.py` exactly):
+ *   1. For each UTC day, compute cumulative volume from session start.
+ *   2. For each bar, take the cum-volume at the same elapsed-since-midnight
+ *      from each of the prior N days.
+ *   3. Mean those prior cum-volumes → that's the baseline.
+ *   4. rvol = today's cum-vol / baseline.
+ *
+ * This is the canonical TradingView "Relative Volume at Time" algorithm
+ * (see LuxAlgo, Julien_Exe). The baseline is the actual average cumulative
+ * volume at the same time-of-day across prior sessions — not a model.
+ *
+ * `fullBars` (optional) is a larger dataset used to compute the rolling
+ * baseline when this function is called on a single-day slice (e.g. when
+ * the user clicks into a day from the overview chart). Without it, the
+ * rolling window sees only 1 day and returns NaN.
  * --------------------------------------------------------------------- */
-function computeRvolInJS(bars, lookback, dist, fullBars) {
-  // bars: array of [t, o, h, l, c, v, r20, r5]  (r20/r5 may be null)
-  // fullBars (optional): larger dataset for the rolling-mean calculation
-  // Returns: array of { time: t_sec, rvol: number|null }
+function computeRvolInJS(bars, lookback, fullBars) {
   if (bars.length === 0) return [];
 
-  // 1) Group into UTC days, sum volume per day. Use fullBars if given
-  //    so the rolling baseline covers the full window, not just the
-  //    current day's bars.
+  // Step 1: build per-day sorted arrays, plus elapsed-since-midnight.
   const source = fullBars || bars;
-  const dailyVolMap = new Map();
+  const dayMap = new Map();   // dayKey -> [{t, v, ems}]  (ems = elapsed ms since 00:00 UTC)
   for (const b of source) {
     const k = dayKey(b[0]);
-    dailyVolMap.set(k, (dailyVolMap.get(k) || 0) + b[5]);
+    if (!dayMap.has(k)) dayMap.set(k, []);
+    const d = new Date(b[0]);
+    const ems = (d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds()) * 1000
+              + d.getUTCMilliseconds();
+    dayMap.get(k).push({ t: b[0], v: b[5], ems });
   }
-  // 2) Rolling N-day mean of daily volume
-  const sortedDays = Array.from(dailyVolMap.entries()).sort((a, b) => a[0] - b[0]);
-  const dayToRolling = new Map();
-  for (let i = 0; i < sortedDays.length; i++) {
-    if (i + 1 < lookback) { dayToRolling.set(sortedDays[i][0], NaN); continue; }
-    let sum = 0;
-    for (let j = i - lookback + 1; j <= i; j++) sum += sortedDays[j][1];
-    dayToRolling.set(sortedDays[i][0], sum / lookback);
+  for (const [, arr] of dayMap) arr.sort((a, b) => a.t - b.t);
+
+  // Step 2: per-day cum-volume series.
+  // cumV[day][bar_idx] = cumulative volume within that day up to and incl. this bar.
+  const cumV = new Map();
+  for (const [k, arr] of dayMap) {
+    const c = new Array(arr.length);
+    let s = 0;
+    for (let i = 0; i < arr.length; i++) { s += arr[i].v; c[i] = s; }
+    cumV.set(k, c);
   }
 
-  // 3) Per-bar: expected cumulative vol = expectedCum(frac) * dailyAvg
-  function expectedCum(frac) {
-    if (frac <= 0) return 0;
-    if (frac >= 1) return 1;
-    if (dist === "linear") return frac;
-    // U-curve
-    if (frac <= 0.013) return 0.05 * (frac / 0.013);
-    if (frac <= 0.077) return 0.05 + 0.15 * ((frac - 0.013) / 0.064);
-    if (frac <= 0.923) return 0.20 + 0.65 * ((frac - 0.077) / 0.846);
-    return 0.85 + 0.15 * ((frac - 0.923) / 0.077);
-  }
+  // Step 3: per-day array of elapsed-since-midnight (parallel to cumV).
+  const elap = new Map();
+  for (const [k, arr] of dayMap) elap.set(k, arr.map(x => x.ems));
 
-  // Group bars by day, build daily bar counts
-  const dayBars = new Map();   // dayKey -> [{t, v, idx}]
-  for (const b of bars) {
-    const k = dayKey(b[0]);
-    if (!dayBars.has(k)) dayBars.set(k, []);
-    dayBars.get(k).push({ t: b[0], v: b[5] });
-  }
-  for (const [, arr] of dayBars) arr.sort((a, b) => a.t - b.t);
-  // The interval (ms) — for our data 15min = 900000 or 5min = 300000
-  const intervalMs = bars.length > 1 ? (bars[1][0] - bars[0][0]) : 300000;
-  const msPerDay = 86400000;
-  // For 24/7, daily bar count = 86400000 / intervalMs
-  // For an arbitrary session window, count actual bars in that day
-  const dailyBarCount = new Map();
-  for (const [k, arr] of dayBars) {
-    if (dist === "linear") {
-      // For linear/24/7, all 24h are in session, count actual bars in this day
-      dailyBarCount.set(k, arr.length);
-    } else {
-      // U-curve: assume full day
-      dailyBarCount.set(k, arr.length);
-    }
-  }
-
-  // Build the per-bar rvol
+  // Step 4: build the rvol series.
+  // For each bar, find the cumV in each of the prior N days at the same
+  // elapsed time (binary search by elapsed). Mean those → baseline.
+  // rvol = today's cumV / baseline.
+  const sortedDays = Array.from(dayMap.keys()).sort();
   const rvolArr = [];
-  for (const [k, arr] of dayBars) {
-    const dailyAvg = dayToRolling.get(k);
-    const N = dailyBarCount.get(k) || arr.length;
-    if (!dailyAvg || isNaN(dailyAvg) || dailyAvg <= 0 || N === 0) {
-      for (let i = 0; i < arr.length; i++) rvolArr.push({ t: arr[i].t, rvol: null });
+  for (let di = 0; di < sortedDays.length; di++) {
+    const k = sortedDays[di];
+    const arr = dayMap.get(k);
+    const cv = cumV.get(k);
+    if (di < lookback) {
+      // Not enough history for this day — emit nulls.
+      for (let i = 0; i < arr.length; i++)
+        rvolArr.push({ t: arr[i].t, rvol: null });
       continue;
     }
-    let cum = 0;
     for (let i = 0; i < arr.length; i++) {
-      cum += arr[i].v;
-      const frac = i / N; // (bar_idx - 1) / daily_bar_count
-      const exp = expectedCum(frac) * dailyAvg;
-      rvolArr.push({ t: arr[i].t, rvol: exp > 0 ? cum / exp : null });
+      const E = arr[i].ems;
+      let sum = 0, n = 0;
+      // Look at the prior `lookback` days (exclusive of current).
+      for (let j = di - lookback; j < di; j++) {
+        const ej = elap.get(sortedDays[j]);
+        const cj = cumV.get(sortedDays[j]);
+        // Binary search: rightmost index with ej[idx] <= E.
+        // Caps at session's last bar (short sessions don't get extrapolated).
+        let lo = 0, hi = ej.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (ej[mid] <= E) lo = mid + 1; else hi = mid;
+        }
+        const idx = lo - 1;
+        if (idx >= 0) { sum += cj[idx]; n++; }
+      }
+      if (n > 0) {
+        const baseline = sum / n;
+        rvolArr.push({ t: arr[i].t, rvol: baseline > 0 ? cv[i] / baseline : null });
+      } else {
+        rvolArr.push({ t: arr[i].t, rvol: null });
+      }
     }
   }
   rvolArr.sort((a, b) => a.t - b.t);
@@ -581,9 +577,7 @@ function pickRvolKey(lookback) {
 function render() {
   setStatus("Rendering…");
   const lookback = state.lookback;
-  const dist = state.dist;
   document.getElementById("hdr-lookback").textContent = "lookback: " + lookback;
-  document.getElementById("hdr-mode").textContent = dist === "linear" ? "linear dist" : "U-curve dist";
 
   // ---- 1. Price chart (overview) ----
   const priceData = state.overviewBars.map(([t, o, h, l, c, v]) => ({
@@ -592,7 +586,7 @@ function render() {
   state.priceSeries.setData(priceData);
 
   // Compute rvol on overview (15m) at chosen lookback
-  const rvolOverview = computeRvolInJS(state.overviewBars, lookback, dist);
+  const rvolOverview = computeRvolInJS(state.overviewBars, lookback);
   const rvolMap = new Map(rvolOverview.map(x => [x.t, x.rvol]));
   // Overlay: line on right axis
   const overlay = [];
@@ -691,7 +685,7 @@ function renderDay(dayMs) {
 
   // Compute rvol for this day. Pass state.overviewBars as fullBars so
   // the rolling mean uses the full 3-month history, not just this day.
-  const rvolDay = computeRvolInJS(dayBars, state.lookback, state.dist, state.overviewBars);
+  const rvolDay = computeRvolInJS(dayBars, state.lookback, state.overviewBars);
   const rvolHist = rvolDay.filter(r => r.rvol != null).map(r => ({
     time: r.t / 1000,
     value: r.rvol,
@@ -729,10 +723,6 @@ async function main() {
 
   document.getElementById("ctrl-lookback").addEventListener("change", (e) => {
     state.lookback = parseInt(e.target.value, 10);
-    render();
-  });
-  document.getElementById("ctrl-dist").addEventListener("change", (e) => {
-    state.dist = e.target.value;
     render();
   });
   document.getElementById("btn-recompute").addEventListener("click", render);
