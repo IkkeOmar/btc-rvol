@@ -234,9 +234,13 @@ const fmtRvol = v => v == null ? "—" : v.toFixed(2);
 const fmtVol = v => {
   if (v == null) return "—";
   const n = Number(v);
-  if (n >= 1e6) return (n/1e6).toFixed(2) + "M BTC";
-  if (n >= 1e3) return (n/1e3).toFixed(2) + "k BTC";
-  return n.toLocaleString(undefined, {maximumFractionDigits: 2}) + " BTC";
+  const unit = state.ticker === "BTC-USD" ? "BTC"
+             : state.ticker === "ETH-USD" ? "ETH"
+             : state.ticker === "SOL-USD" ? "SOL"
+             : "units";
+  if (n >= 1e6) return (n/1e6).toFixed(2) + "M " + unit;
+  if (n >= 1e3) return (n/1e3).toFixed(2) + "k " + unit;
+  return n.toLocaleString(undefined, {maximumFractionDigits: 2}) + " " + unit;
 };
 const fmtTime = ms => {
   const d = new Date(ms);
