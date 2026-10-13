@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Cumulative RVOL — BTC-USD</title>
+<style>
+  :root {
+    --bg: #0b0d17;
+    --panel: #141826;
+    --panel-2: #1a1f33;
+    --border: #2a2f44;
+    --text: #e6e8ee;
+    --dim: #8b91a8;
+    --green: #26a69a;
+    --red: #ef5350;
+    --purple: #7c5cfc;
+    --cyan: #38bdf8;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    padding: 12px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding-bottom: env(safe-area-inset-bottom, 12px);
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .subtitle { color: var(--dim); font-size: 12px; }
+  .pill {
+    display: inline-block;
+    padding: 3px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .pill.live { color: var(--green); border-color: var(--green); }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    align-items: center;
+  }
+  .controls label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--dim);
+    font-size: 12px;
+  }
+  .controls select, .controls input[type=number] {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 13px;
+    min-width: 0;
+  }
+  .btn {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn.active { background: var(--purple); border-color: var(--purple); color: white; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .stat .value.green { color: var(--green); }
+  .stat .value.red { color: var(--red); }
+  .stat .sub { color: var(--dim); font-size: 11px; margin-top: 1px; }
+
+  .chart-container {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .chart-title {
+    font-size: 12px;
+    color: var(--dim);
+    margin-bottom: 6px;
+    padding-left: 4px;
+  }
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 320px;
+  }
+  #price-chart { height: 400px; }
+  #day-chart { height: 380px; }
+  #rvol-chart  { height: 300px; }
+  #day-rvol-chart { height: 240px; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 6px;
+    padding: 0 4px;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .legend .sw {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+
+  .help {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.6;
+  }
+  .help b { color: var(--text); }
+  .help kbd {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+    font-family: monospace;
+  }
+
+  .footer {
+    color: var(--dim);
+    font-size: 11px;
+    text-align: center;
+    padding: 12px 0;
+  }
+
+  /* day-detail header */
+  .day-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .day-nav { display: flex; gap: 6px; }
+  .day-info { color: var(--dim); font-size: 12px; }
+
+  @media (max-width: 600px) {
+    body { padding: 8px; font-size: 13px; }
+    h1 { font-size: 16px; }
+    .chart-wrap { height: 260px; }
+    #price-chart { height: 320px; }
+    #day-chart { height: 320px; }
+    #rvol-chart  { height: 240px; }
+    #day-rvol-chart { height: 200px; }
+    .stat .value { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Cumulative RVOL — <span id="hdr-ticker">BTC-USD</span></h1>
+    <div class="subtitle" id="hdr-sub">5m bars · 3 months · N-day rolling baseline</div>
+  </div>
+  <div>
+    <span class="pill" id="hdr-mode">linear dist</span>
+    <span class="pill" id="hdr-lookback">lookback: 20</span>
+  </div>
+</header>
+
+<div class="help">
+  <b>Cumulative RVOL</b> = today's running volume ÷ expected volume at this point in the session.
+  RVOL = 1.0 means "on pace for the day", &gt;1 means ahead, &lt;1 means behind.
+  <br>
+  <b>Controls</b>:
+  <kbd>Lookback</kbd> = N-day rolling average daily volume baseline.
+  <kbd>Distribution</kbd> = U-curve (US equities, 5% in first 5 min) or Linear (24/7 crypto).
+  <kbd>Date range</kbd> = zoom on the price chart by dragging.
+  Tap a day in the price chart to see bar-by-bar breakdown below.
+</div>
+
+<div class="controls">
+  <label>Lookback:
+    <select id="ctrl-lookback">
+      <option value="5">5 days</option>
+      <option value="10">10 days</option>
+      <option value="20" selected>20 days</option>
+      <option value="50">50 days</option>
+    </select>
+  </label>
+  <label>Distribution:
+    <select id="ctrl-dist">
+      <option value="linear" selected>linear (24/7 crypto)</option>
+      <option value="u_curve">U-curve (US equities)</option>
+    </select>
+  </label>
+  <button class="btn" id="btn-recompute">Recompute</button>
+  <button class="btn" id="btn-today">Jump to today</button>
+  <span style="flex:1"></span>
+  <span class="pill" id="status-pill">Loading…</span>
+</div>
+
+<div class="stats" id="stats-row">
+  <div class="stat"><div class="label">Latest rvol</div><div class="value" id="s-latest">—</div><div class="sub" id="s-latest-time">—</div></div>
+  <div class="stat"><div class="label">Daily mean</div><div class="value" id="s-daily">—</div><div class="sub" id="s-daily-time">—</div></div>
+  <div class="stat"><div class="label">Today vs avg</div><div class="value" id="s-pct">—</div><div class="sub" id="s-pct-sub">—</div></div>
+  <div class="stat"><div class="label">20d mean rvol</div><div class="value" id="s-20mean">—</div><div class="sub">whole window</div></div>
+  <div class="stat"><div class="label">95th pctl</div><div class="value" id="s-p95">—</div><div class="sub">spike threshold</div></div>
+</div>
+
+<div class="chart-container">
+  <div class="chart-title">Price · <span style="color:var(--dim)">click any candle to drill into that day →</span></div>
+  <div class="chart-wrap" id="price-chart"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--green)"></span>close ≥ open</span>
+    <span><span class="sw" style="background:var(--red)"></span>close &lt; open</span>
+    <span><span class="sw" style="background:var(--purple)"></span>rvol overlay (right axis)</span>
+  </div>
+</div>
+
+<div class="chart-container">
+  <div class="day-header">
+    <div class="chart-title">Day detail · <span id="day-label" style="color:var(--cyan)">—</span></div>
+    <div class="day-nav">
+      <button class="btn" id="btn-prev-day">← prev</button>
+      <button class="btn" id="btn-next-day">next →</button>
+    </div>
+  </div>
+  <div class="chart-wrap" id="day-chart"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--green)"></span>5m candles</span>
+    <span><span class="sw" style="background:#94a3b8"></span>volume subpane</span>
+  </div>
+  <div class="day-info" id="day-info" style="margin-top:6px;">—</div>
+</div>
+
+<div class="chart-container">
+  <div class="chart-title">Cumulative RVOL · whole window</div>
+  <div class="chart-wrap" id="rvol-chart"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--green)"></span>rvol ≥ 1.0 (above pace)</span>
+    <span><span class="sw" style="background:var(--red)"></span>rvol &lt; 1.0 (behind pace)</span>
+    <span><span class="sw" style="background:#787b86"></span>1.0 reference</span>
+  </div>
+</div>
+
+<div class="chart-container">
+  <div class="chart-title">Cumulative RVOL · selected day (5m bars)</div>
+  <div class="chart-wrap" id="day-rvol-chart"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--green)"></span>rvol ≥ 1.0</span>
+    <span><span class="sw" style="background:var(--red)"></span>rvol &lt; 1.0</span>
+    <span><span class="sw" style="background:#787b86"></span>1.0 reference</span>
+  </div>
+</div>
+
+<div class="footer">
+  Source: Binance public klines · v5.2.1 lightweight-charts · precomputed in Python, rendered in JS
+</div>
+
+<script src="lightweight-charts.min.js"></script>
+<script>
+"use strict";
+
+/* -----------------------------------------------------------------------
+ * State
+ * --------------------------------------------------------------------- */
+const state = {
+  overviewBars: [],      // 15-min bars: [t, o, h, l, c, v, r20, r5]
+  detailBars: [],        // 5-min bars last 7 days: same shape
+  lookback: 20,
+  dist: "linear",
+  selectedDay: null,     // ms timestamp of the day being shown
+  priceChart: null,
+  dayChart: null,
+  rvolChart: null,
+  dayRvolChart: null,
+  priceSeries: null,
+  dayPriceSeries: null,
+  dayVolSeries: null,
+  rvolSeries: null,
+  dayRvolSeries: null,
+  priceRvolOverlay: null, // line on right axis
+};
+
+/* -----------------------------------------------------------------------
+ * Data fetch
+ * --------------------------------------------------------------------- */
+async function loadData() {
+  setStatus("Loading 15m overview…");
+  const r1 = await fetch("embedded_data_15m.json");
+  const j1 = await r1.json();
+  state.overviewBars = j1.bars;
+  setStatus("Loading 5m 7-day detail…");
+  const r2 = await fetch("embedded_data_5m_7d.json");
+  const j2 = await r2.json();
+  state.detailBars = j2.bars;
+  // Default selected day = last day in detail set
+  const last = state.detailBars[state.detailBars.length - 1];
+  state.selectedDay = dayKey(last[0]);
+}
+
+/* -----------------------------------------------------------------------
+ * Helpers
+ * --------------------------------------------------------------------- */
+function dayKey(ms) {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+function fmtDay(ms) {
+  const d = new Date(ms);
+  return d.toISOString().slice(0, 10);
+}
+function fmtDayTime(ms) {
+  const d = new Date(ms);
+  return d.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+}
+function setStatus(msg) {
+  document.getElementById("status-pill").textContent = msg;
+}
+
+/* -----------------------------------------------------------------------
+ * Charts
+ * --------------------------------------------------------------------- */
+function initCharts() {
+  const dark = {
+    layout: {
+      background: { type: "solid", color: "#141826" },
+      textColor: "#e6e8ee",
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { color: "#1f2436" },
+      horzLines: { color: "#1f2436" },
+    },
+    rightPriceScale: { borderColor: "#2a2f44" },
+    timeScale: { borderColor: "#2a2f44", timeVisible: true, secondsVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  };
+
+  // ---- Price chart (overview, 15m) ----
+  const pc = document.getElementById("price-chart");
+  state.priceChart = LightweightCharts.createChart(pc, {
+    ...dark,
+    autoSize: true,
+  });
+  state.priceSeries = state.priceChart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: "#26a69a",
+    downColor: "#ef5350",
+    borderUpColor: "#26a69a",
+    borderDownColor: "#ef5350",
+    wickUpColor: "#26a69a",
+    wickDownColor: "#ef5350",
+  });
+  // Right axis for rvol overlay
+  state.priceRvolOverlay = state.priceChart.addSeries(LightweightCharts.LineSeries, {
+    color: "#7c5cfc",
+    lineWidth: 1,
+    priceScaleId: "rvol",
+    lastValueVisible: true,
+    priceLineVisible: false,
+  });
+  state.priceChart.priceScale("rvol").applyOptions({
+    scaleMargins: { top: 0.8, bottom: 0 },
+    borderColor: "#2a2f44",
+    autoScale: true,
+  });
+  state.priceChart.priceScale("right").applyOptions({
+    scaleMargins: { top: 0.05, bottom: 0.18 },
+  });
+
+  // ---- Day-detail candlestick + volume ----
+  const dc = document.getElementById("day-chart");
+  state.dayChart = LightweightCharts.createChart(dc, {
+    ...dark,
+    autoSize: true,
+  });
+  state.dayPriceSeries = state.dayChart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: "#26a69a",
+    downColor: "#ef5350",
+    borderUpColor: "#26a69a",
+    borderDownColor: "#ef5350",
+    wickUpColor: "#26a69a",
+    wickDownColor: "#ef5350",
+  });
+  state.dayVolSeries = state.dayChart.addSeries(LightweightCharts.HistogramSeries, {
+    color: "#94a3b8",
+    priceFormat: { type: "volume" },
+    priceScaleId: "vol",
+  });
+  state.dayChart.priceScale("vol").applyOptions({
+    scaleMargins: { top: 0.78, bottom: 0 },
+    borderColor: "#2a2f44",
+  });
+
+  // ---- Whole-window rvol histogram ----
+  const rc = document.getElementById("rvol-chart");
+  state.rvolChart = LightweightCharts.createChart(rc, {
+    ...dark,
+    autoSize: true,
+  });
+  state.rvolSeries = state.rvolChart.addSeries(LightweightCharts.HistogramSeries, {
+    color: "#26a69a",
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+  });
+  state.rvolChart.priceScale("right").applyOptions({
+    scaleMargins: { top: 0.05, bottom: 0.05 },
+  });
+
+  // ---- Day-detail rvol histogram ----
+  const drc = document.getElementById("day-rvol-chart");
+  state.dayRvolChart = LightweightCharts.createChart(drc, {
+    ...dark,
+    autoSize: true,
+  });
+  state.dayRvolSeries = state.dayRvolChart.addSeries(LightweightCharts.HistogramSeries, {
+    color: "#26a69a",
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+  });
+
+  // Click on price chart → drill into that day
+  state.priceChart.subscribeClick((p) => {
+    if (p && p.time) {
+      const ms = (typeof p.time === "number") ? p.time * 1000 : Date.parse(p.time);
+      if (!isNaN(ms)) selectDay(dayKey(ms));
+    }
+  });
+}
+
+/* -----------------------------------------------------------------------
+ * Compute RVOL in JS (same algorithm as the Python script)
+ * --------------------------------------------------------------------- */
+function computeRvolInJS(bars, lookback, dist) {
+  // bars: array of [t, o, h, l, c, v, r20, r5]  (r20/r5 may be null)
+  // Returns: array of { time: t_sec, rvol: number|null }
+  if (bars.length === 0) return [];
+
+  // 1) Group into UTC days, sum volume per day
+  const dailyVolMap = new Map(); // dayKey_ms -> totalVol
+  for (const b of bars) {
+    const k = dayKey(b[0]);
+    dailyVolMap.set(k, (dailyVolMap.get(k) || 0) + b[5]);
+  }
+  // 2) Rolling N-day mean of daily volume
+  const sortedDays = Array.from(dailyVolMap.entries()).sort((a, b) => a[0] - b[0]);
+  const dayToRolling = new Map();
+  for (let i = 0; i < sortedDays.length; i++) {
+    if (i + 1 < lookback) { dayToRolling.set(sortedDays[i][0], NaN); continue; }
+    let sum = 0;
+    for (let j = i - lookback + 1; j <= i; j++) sum += sortedDays[j][1];
+    dayToRolling.set(sortedDays[i][0], sum / lookback);
+  }
+
+  // 3) Per-bar: expected cumulative vol = expectedCum(frac) * dailyAvg
+  function expectedCum(frac) {
+    if (frac <= 0) return 0;
+    if (frac >= 1) return 1;
+    if (dist === "linear") return frac;
+    // U-curve
+    if (frac <= 0.013) return 0.05 * (frac / 0.013);
+    if (frac <= 0.077) return 0.05 + 0.15 * ((frac - 0.013) / 0.064);
+    if (frac <= 0.923) return 0.20 + 0.65 * ((frac - 0.077) / 0.846);
+    return 0.85 + 0.15 * ((frac - 0.923) / 0.077);
+  }
+
+  // Group bars by day, build daily bar counts
+  const dayBars = new Map();   // dayKey -> [{t, v, idx}]
+  for (const b of bars) {
+    const k = dayKey(b[0]);
+    if (!dayBars.has(k)) dayBars.set(k, []);
+    dayBars.get(k).push({ t: b[0], v: b[5] });
+  }
+  for (const [, arr] of dayBars) arr.sort((a, b) => a.t - b.t);
+  // The interval (ms) — for our data 15min = 900000 or 5min = 300000
+  const intervalMs = bars.length > 1 ? (bars[1][0] - bars[0][0]) : 300000;
+  const msPerDay = 86400000;
+  // For 24/7, daily bar count = 86400000 / intervalMs
+  // For an arbitrary session window, count actual bars in that day
+  const dailyBarCount = new Map();
+  for (const [k, arr] of dayBars) {
+    if (dist === "linear") {
+      // For linear/24/7, all 24h are in session, count actual bars in this day
+      dailyBarCount.set(k, arr.length);
+    } else {
+      // U-curve: assume full day
+      dailyBarCount.set(k, arr.length);
+    }
+  }
+
+  // Build the per-bar rvol
+  const rvolArr = [];
+  for (const [k, arr] of dayBars) {
+    const dailyAvg = dayToRolling.get(k);
+    const N = dailyBarCount.get(k) || arr.length;
+    if (!dailyAvg || isNaN(dailyAvg) || dailyAvg <= 0 || N === 0) {
+      for (let i = 0; i < arr.length; i++) rvolArr.push({ t: arr[i].t, rvol: null });
+      continue;
+    }
+    let cum = 0;
+    for (let i = 0; i < arr.length; i++) {
+      cum += arr[i].v;
+      const frac = i / N; // (bar_idx - 1) / daily_bar_count
+      const exp = expectedCum(frac) * dailyAvg;
+      rvolArr.push({ t: arr[i].t, rvol: exp > 0 ? cum / exp : null });
+    }
+  }
+  rvolArr.sort((a, b) => a.t - b.t);
+  return rvolArr;
+}
+
+/* -----------------------------------------------------------------------
+ * Render
+ * --------------------------------------------------------------------- */
+function pickRvolKey(lookback) {
+  return "r" + lookback;
+}
+
+function render() {
+  setStatus("Rendering…");
+  const lookback = state.lookback;
+  const dist = state.dist;
+  document.getElementById("hdr-lookback").textContent = "lookback: " + lookback;
+  document.getElementById("hdr-mode").textContent = dist === "linear" ? "linear dist" : "U-curve dist";
+
+  // ---- 1. Price chart (overview) ----
+  const priceData = state.overviewBars.map(([t, o, h, l, c, v]) => ({
+    time: t / 1000, open: o, high: h, low: l, close: c,
+  }));
+  state.priceSeries.setData(priceData);
+
+  // Compute rvol on overview (15m) at chosen lookback
+  const rvolOverview = computeRvolInJS(state.overviewBars, lookback, dist);
+  const rvolMap = new Map(rvolOverview.map(x => [x.t, x.rvol]));
+  // Overlay: line on right axis
+  const overlay = [];
+  for (const r of rvolOverview) {
+    if (r.rvol != null) overlay.push({ time: r.t / 1000, value: r.rvol });
+  }
+  state.priceRvolOverlay.setData(overlay);
+
+  // ---- 2. Whole-window rvol histogram ----
+  const rvolHist = [];
+  for (const r of rvolOverview) {
+    if (r.rvol != null) {
+      rvolHist.push({
+        time: r.t / 1000,
+        value: r.rvol,
+        color: r.rvol >= 1.0 ? "#26a69a" : "#ef5350",
+      });
+    }
+  }
+  state.rvolSeries.setData(rvolHist);
+  // Add 1.0 reference line
+  try { state.rvolSeries.createPriceLine({ price: 1.0, color: "#787b86", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "1.0" }); } catch(e) {}
+
+  // ---- 3. Day-detail (using 5m 7-day data) ----
+  renderDay(state.selectedDay);
+
+  // ---- 4. Stats ----
+  const valid = rvolOverview.filter(r => r.rvol != null);
+  const rvolVals = valid.map(r => r.rvol);
+  const lastR = valid[valid.length - 1];
+  const sum = rvolVals.reduce((a, b) => a + b, 0);
+  const mean = sum / rvolVals.length;
+  const sorted = [...rvolVals].sort((a, b) => a - b);
+  const p95 = sorted[Math.floor(sorted.length * 0.95)];
+
+  document.getElementById("s-latest").textContent = lastR ? lastR.rvol.toFixed(2) : "—";
+  document.getElementById("s-latest").className = "value " + (lastR && lastR.rvol >= 1.0 ? "green" : "red");
+  document.getElementById("s-latest-time").textContent = lastR ? fmtDayTime(lastR.t) : "";
+
+  // Daily mean: latest day
+  const dayBuckets = new Map();
+  for (const r of valid) {
+    const k = dayKey(r.t);
+    if (!dayBuckets.has(k)) dayBuckets.set(k, []);
+    dayBuckets.get(k).push(r.rvol);
+  }
+  const dayKeys = Array.from(dayBuckets.keys()).sort((a, b) => a - b);
+  const lastDay = dayKeys[dayKeys.length - 1];
+  const dayVals = dayBuckets.get(lastDay) || [];
+  const dayMean = dayVals.reduce((a, b) => a + b, 0) / dayVals.length;
+  document.getElementById("s-daily").textContent = dayMean.toFixed(2);
+  document.getElementById("s-daily").className = "value " + (dayMean >= 1.0 ? "green" : "red");
+  document.getElementById("s-daily-time").textContent = "for " + fmtDay(lastDay);
+
+  // Today vs avg (latest day rvol end-of-day)
+  const lastDayEnd = valid.filter(r => dayKey(r.t) === lastDay).pop();
+  const pctEl = document.getElementById("s-pct");
+  if (lastDayEnd) {
+    const pct = (lastDayEnd.rvol - 1) * 100;
+    pctEl.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+    pctEl.className = "value " + (pct >= 0 ? "green" : "red");
+    document.getElementById("s-pct-sub").textContent = "final rvol: " + lastDayEnd.rvol.toFixed(2);
+  }
+
+  document.getElementById("s-20mean").textContent = mean.toFixed(2);
+  document.getElementById("s-p95").textContent = p95.toFixed(2);
+
+  // Fit time ranges
+  state.priceChart.timeScale().fitContent();
+  state.rvolChart.timeScale().fitContent();
+  setStatus("Live · " + state.overviewBars.length + " 15m bars · " + state.detailBars.length + " 5m bars");
+}
+
+function renderDay(dayMs) {
+  state.selectedDay = dayMs;
+  const dayBars = state.detailBars.filter(b => dayKey(b[0]) === dayMs);
+  if (dayBars.length === 0) {
+    document.getElementById("day-label").textContent = "(no data)";
+    document.getElementById("day-info").textContent = "—";
+    return;
+  }
+  const dayLabel = fmtDay(dayMs);
+  document.getElementById("day-label").textContent = dayLabel;
+
+  // 5m candles + volume histogram
+  const candleData = dayBars.map(([t, o, h, l, c, v]) => ({
+    time: t / 1000, open: o, high: h, low: l, close: c,
+  }));
+  const volData = dayBars.map(([t, o, h, l, c, v]) => ({
+    time: t / 1000, value: v,
+    color: c >= o ? "#26a69a55" : "#ef535055",
+  }));
+  state.dayPriceSeries.setData(candleData);
+  state.dayVolSeries.setData(volData);
+  state.dayChart.timeScale().fitContent();
+
+  // Compute rvol for this day
+  const rvolDay = computeRvolInJS(dayBars, state.lookback, state.dist);
+  const rvolHist = rvolDay.filter(r => r.rvol != null).map(r => ({
+    time: r.t / 1000,
+    value: r.rvol,
+    color: r.rvol >= 1.0 ? "#26a69a" : "#ef5350",
+  }));
+  state.dayRvolSeries.setData(rvolHist);
+  state.dayRvolChart.timeScale().fitContent();
+  try { state.dayRvolSeries.createPriceLine({ price: 1.0, color: "#787b86", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "1.0" }); } catch(e) {}
+
+  // Day summary
+  const totalVol = dayBars.reduce((s, b) => s + b[5], 0);
+  const open = dayBars[0][1], close = dayBars[dayBars.length - 1][4];
+  const dayChg = ((close - open) / open) * 100;
+  const hi = Math.max(...dayBars.map(b => b[2]));
+  const lo = Math.min(...dayBars.map(b => b[3]));
+  const finalRvol = rvolDay.filter(r => r.rvol != null).pop();
+  document.getElementById("day-info").innerHTML =
+    `<b>${dayBars.length} bars</b> · O $${open.toLocaleString()} H $${hi.toLocaleString()} L $${lo.toLocaleString()} C $${close.toLocaleString()} ` +
+    `<span style="color:${dayChg >= 0 ? 'var(--green)' : 'var(--red)'}">${dayChg >= 0 ? '+' : ''}${dayChg.toFixed(2)}%</span> · ` +
+    `vol ${totalVol.toFixed(1)} BTC · ` +
+    `final rvol <b style="color:${finalRvol && finalRvol.rvol >= 1.0 ? 'var(--green)' : 'var(--red)'}">${finalRvol ? finalRvol.rvol.toFixed(2) : '—'}</b>`;
+}
+
+function selectDay(dayMs) {
+  renderDay(dayMs);
+}
+
+/* -----------------------------------------------------------------------
+ * Wiring
+ * --------------------------------------------------------------------- */
+async function main() {
+  await loadData();
+  initCharts();
+  render();
+
+  document.getElementById("ctrl-lookback").addEventListener("change", (e) => {
+    state.lookback = parseInt(e.target.value, 10);
+    render();
+  });
+  document.getElementById("ctrl-dist").addEventListener("change", (e) => {
+    state.dist = e.target.value;
+    render();
+  });
+  document.getElementById("btn-recompute").addEventListener("click", render);
+
+  document.getElementById("btn-prev-day").addEventListener("click", () => {
+    const days = Array.from(new Set(state.detailBars.map(b => dayKey(b[0])))).sort((a, b) => a - b);
+    const idx = days.indexOf(state.selectedDay);
+    if (idx > 0) renderDay(days[idx - 1]);
+  });
+  document.getElementById("btn-next-day").addEventListener("click", () => {
+    const days = Array.from(new Set(state.detailBars.map(b => dayKey(b[0])))).sort((a, b) => a - b);
+    const idx = days.indexOf(state.selectedDay);
+    if (idx >= 0 && idx < days.length - 1) renderDay(days[idx + 1]);
+  });
+  document.getElementById("btn-today").addEventListener("click", () => {
+    state.priceChart.timeScale().fitContent();
+    state.rvolChart.timeScale().fitContent();
+  });
+}
+
+main().catch(err => {
+  setStatus("ERROR: " + err.message);
+  console.error(err);
+});
+</script>
+</body>
+</html>
