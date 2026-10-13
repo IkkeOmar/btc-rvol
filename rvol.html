@@ -483,15 +483,24 @@ function initCharts() {
 
 /* -----------------------------------------------------------------------
  * Compute RVOL in JS (same algorithm as the Python script)
+ *
+ * If `fullBars` is provided (a larger dataset used to compute the rolling
+ * average), use its daily volumes for the rolling mean. This is needed
+ * when computing rvol for a single day selected from the price chart
+ * — otherwise the rolling window sees only 1 day and is NaN.
  * --------------------------------------------------------------------- */
-function computeRvolInJS(bars, lookback, dist) {
+function computeRvolInJS(bars, lookback, dist, fullBars) {
   // bars: array of [t, o, h, l, c, v, r20, r5]  (r20/r5 may be null)
+  // fullBars (optional): larger dataset for the rolling-mean calculation
   // Returns: array of { time: t_sec, rvol: number|null }
   if (bars.length === 0) return [];
 
-  // 1) Group into UTC days, sum volume per day
-  const dailyVolMap = new Map(); // dayKey_ms -> totalVol
-  for (const b of bars) {
+  // 1) Group into UTC days, sum volume per day. Use fullBars if given
+  //    so the rolling baseline covers the full window, not just the
+  //    current day's bars.
+  const source = fullBars || bars;
+  const dailyVolMap = new Map();
+  for (const b of source) {
     const k = dayKey(b[0]);
     dailyVolMap.set(k, (dailyVolMap.get(k) || 0) + b[5]);
   }
@@ -680,8 +689,9 @@ function renderDay(dayMs) {
   state.dayVolSeries.setData(volData);
   state.dayChart.timeScale().fitContent();
 
-  // Compute rvol for this day
-  const rvolDay = computeRvolInJS(dayBars, state.lookback, state.dist);
+  // Compute rvol for this day. Pass state.overviewBars as fullBars so
+  // the rolling mean uses the full 3-month history, not just this day.
+  const rvolDay = computeRvolInJS(dayBars, state.lookback, state.dist, state.overviewBars);
   const rvolHist = rvolDay.filter(r => r.rvol != null).map(r => ({
     time: r.t / 1000,
     value: r.rvol,
