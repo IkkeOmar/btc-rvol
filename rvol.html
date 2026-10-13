@@ -192,7 +192,7 @@
   </div>
   <div class="chart" id="day-chart"></div>
   <div class="chart short" id="day-rvol-chart"></div>
-  <div class="help">Tap a day above. rvol &gt; 1 = running hotter than the prior N days at the same time-of-day.</div>
+  <div class="help">Tap a day above. rvol &gt; 1 = running hotter than the prior N weekdays at the same time-of-day.</div>
 </div>
 
 <div class="bottombar">
@@ -301,14 +301,16 @@ function computeRvol(bars, lookback) {
     const k = sortedDays[di];
     const arr = dayMap.get(k);
     const cv = cumV.get(k);
-    if (di < lookback) {
-      for (const x of arr) rvol.set(x.t, null);
-      continue;
-    }
     for (let i = 0; i < arr.length; i++) {
       const E = arr[i].ems;
       let sum = 0, n = 0;
-      for (let j = di - lookback; j < di; j++) {
+      // Walk backward day-by-day and take the first N WEEKDAY predecessors
+      // (skip Sat=6 and Sun=0). Crypto trades 24/7 but for the RVOL baseline
+      // we want the prior "trading session" days, not raw calendar days.
+      for (let j = di - 1; j >= 0 && n < lookback; j--) {
+        const pd = new Date(sortedDays[j] + "T00:00:00Z");
+        const dow = pd.getUTCDay();
+        if (dow === 0 || dow === 6) continue;
         const ej = elap.get(sortedDays[j]);
         const cj = cumV.get(sortedDays[j]);
         let lo = 0, hi = ej.length;
